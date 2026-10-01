@@ -1,0 +1,424 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ============================================================
+# CONSTANTES FÍSICAS
+# ============================================================
+
+q = 1.602e-19          # carga del protón [C]
+m = 1.673e-27          # masa del protón [kg]
+
+RE = 6.378e6           # radio de la Tierra [m]
+RM = 3.389e6           # radio de Marte [m]
+
+B0_E = 3.07e-5         # campo ecuatorial terrestre [T]
+
+
+# ============================================================
+# CAMPO MAGNÉTICO DE LA TIERRA
+# Modelo dipolar
+# ============================================================
+
+def campo_tierra(r):
+
+    x, y, z = r
+
+    R = np.sqrt(x**2 + y**2 + z**2)
+
+    if R == 0:
+        return np.zeros(3)
+
+    factor = B0_E * RE**3 / R**5
+
+    Bx = factor * 3*x*z
+    By = factor * 3*y*z
+    Bz = factor * (3*z**2 - R**2)
+
+    return np.array([Bx, By, Bz])
+
+
+# ============================================================
+# CAMPO DE UN DIPOLO LOCAL
+# Lo usamos para construir un Marte simplificado
+# ============================================================
+
+def dipolo_local(r, posicion, direccion, intensidad):
+
+    dr = r - posicion
+
+    d = np.linalg.norm(dr)
+
+    if d == 0:
+        return np.zeros(3)
+
+    direccion = direccion / np.linalg.norm(direccion)
+
+    producto = np.dot(direccion, dr)
+
+    B = intensidad / d**5 * (
+        3*producto*dr - d**2*direccion
+    )
+
+    return B
+
+
+# ============================================================
+# CAMPO MAGNÉTICO SIMPLIFICADO DE MARTE
+# Superposición de 3 anomalías magnéticas locales
+# ============================================================
+
+def campo_marte(r):
+
+    # Posiciones de los "dipolos corticales"
+    p1 = np.array([0.0, 0.0, -0.85*RM])
+    p2 = np.array([0.35*RM, 0.0, -0.82*RM])
+    p3 = np.array([-0.30*RM, 0.25*RM, -0.80*RM])
+
+    # Direcciones
+    d1 = np.array([0.0, 0.0, 1.0])
+    d2 = np.array([0.3, 0.0, 1.0])
+    d3 = np.array([-0.2, 0.3, 1.0])
+
+    # Escala elegida para producir campos locales del orden de microteslas
+    Bsuperficie = 1.5e-6
+
+    profundidad = 0.15*RM
+
+    # Sobre el eje de un dipolo B = 2C/r^3
+    C = Bsuperficie * profundidad**3 / 2
+
+    B1 = dipolo_local(r, p1, d1, C)
+    B2 = dipolo_local(r, p2, d2, 0.8*C)
+    B3 = dipolo_local(r, p3, d3, 0.6*C)
+
+    return B1 + B2 + B3
+
+
+# ============================================================
+# ECUACIÓN DE MOVIMIENTO
+#
+# dr/dt = v
+# dv/dt = (q/m) v x B
+# ============================================================
+
+def derivadas(estado, campo):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo(r)
+
+    drdt = v
+    dvdt = (q/m) * np.cross(v, B)
+
+    return np.concatenate((drdt, dvdt))
+
+
+# ============================================================
+# MÉTODO DE EULER
+# ============================================================
+
+def euler(estado0, campo, dt, pasos):
+
+    estados = np.zeros((pasos + 1, 6))
+
+    estados[0] = estado0
+
+    for i in range(pasos):
+
+        estados[i+1] = (
+            estados[i]
+            + dt*derivadas(estados[i], campo)
+        )
+
+    return estados
+
+
+# ============================================================
+# MÉTODO RK2 - PUNTO MEDIO
+# ============================================================
+
+def rk2(estado0, campo, dt, pasos):
+
+    estados = np.zeros((pasos + 1, 6))
+
+    estados[0] = estado0
+
+    for i in range(pasos):
+
+        k1 = derivadas(estados[i], campo)
+
+        estado_medio = estados[i] + (dt/2)*k1
+
+        k2 = derivadas(estado_medio, campo)
+
+        estados[i+1] = estados[i] + dt*k2
+
+    return estados
+
+
+# ============================================================
+# CONDICIONES INICIALES
+# ============================================================
+
+v0 = np.array([
+    0.0,
+    2.0e5,
+    1.0e5
+])
+
+# Posiciones equivalentes:
+# 1.6 radios planetarios desde el centro
+
+r0_tierra = np.array([
+    1.6*RE,
+    0.0,
+    0.0
+])
+
+r0_marte = np.array([
+    1.6*RM,
+    0.0,
+    0.0
+])
+
+estado_tierra = np.concatenate((r0_tierra, v0))
+estado_marte = np.concatenate((r0_marte, v0))
+
+
+# ============================================================
+# PARÁMETROS NUMÉRICOS
+# ============================================================
+
+dt = 2e-5             # paso temporal [s]
+
+tiempo_total = 0.2    # segundos
+
+pasos = int(tiempo_total/dt)
+
+t = np.linspace(
+    0,
+    tiempo_total,
+    pasos + 1
+)
+
+
+# ============================================================
+# SIMULACIONES RK2
+# ============================================================
+
+print("Simulando Tierra...")
+
+sol_tierra = rk2(
+    estado_tierra,
+    campo_tierra,
+    dt,
+    pasos
+)
+
+print("Simulando Marte...")
+
+sol_marte = rk2(
+    estado_marte,
+    campo_marte,
+    dt,
+    pasos
+)
+
+
+# ============================================================
+# SIMULACIÓN EULER PARA COMPARAR ERROR
+# ============================================================
+
+sol_euler = euler(
+    estado_tierra,
+    campo_tierra,
+    dt,
+    pasos
+)
+
+
+# ============================================================
+# EXTRAER POSICIONES Y VELOCIDADES
+# ============================================================
+
+r_tierra = sol_tierra[:, :3]
+v_tierra = sol_tierra[:, 3:]
+
+r_marte = sol_marte[:, :3]
+v_marte = sol_marte[:, 3:]
+
+v_euler = sol_euler[:, 3:]
+
+
+# ============================================================
+# RAPIDEZ
+# ============================================================
+
+rapidez_tierra = np.linalg.norm(v_tierra, axis=1)
+rapidez_marte = np.linalg.norm(v_marte, axis=1)
+rapidez_euler = np.linalg.norm(v_euler, axis=1)
+
+rapidez_inicial = np.linalg.norm(v0)
+
+
+# ============================================================
+# ERROR RELATIVO EN RAPIDEZ
+# ============================================================
+
+error_rk2 = (
+    np.abs(rapidez_tierra - rapidez_inicial)
+    / rapidez_inicial
+) * 100
+
+error_euler = (
+    np.abs(rapidez_euler - rapidez_inicial)
+    / rapidez_inicial
+) * 100
+
+
+# ============================================================
+# RESULTADOS NUMÉRICOS
+# ============================================================
+
+print()
+print("===================================")
+print("RESULTADOS")
+print("===================================")
+
+print("Rapidez inicial:")
+print(rapidez_inicial, "m/s")
+
+print()
+
+print("Error final RK2:")
+print(error_rk2[-1], "%")
+
+print()
+
+print("Error final Euler:")
+print(error_euler[-1], "%")
+
+
+# ============================================================
+# GRÁFICA 1
+# TRAYECTORIA TIERRA
+# ============================================================
+
+fig = plt.figure()
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+ax.plot(
+    r_tierra[:, 0]/RE,
+    r_tierra[:, 1]/RE,
+    r_tierra[:, 2]/RE
+)
+
+ax.set_xlabel("x / RE")
+ax.set_ylabel("y / RE")
+ax.set_zlabel("z / RE")
+
+ax.set_title(
+    "Trayectoria del protón - Tierra"
+)
+
+plt.show()
+
+
+# ============================================================
+# GRÁFICA 2
+# TRAYECTORIA MARTE
+# ============================================================
+
+fig = plt.figure()
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+ax.plot(
+    r_marte[:, 0]/RM,
+    r_marte[:, 1]/RM,
+    r_marte[:, 2]/RM
+)
+
+ax.set_xlabel("x / RM")
+ax.set_ylabel("y / RM")
+ax.set_zlabel("z / RM")
+
+ax.set_title(
+    "Trayectoria del protón - Marte"
+)
+
+plt.show()
+
+
+# ============================================================
+# GRÁFICA 3
+# CONSERVACIÓN DE LA RAPIDEZ
+# ============================================================
+
+plt.figure()
+
+plt.plot(
+    t,
+    rapidez_tierra / rapidez_inicial,
+    label="Tierra - RK2"
+)
+
+plt.plot(
+    t,
+    rapidez_marte / rapidez_inicial,
+    label="Marte - RK2"
+)
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel("v / v0")
+
+plt.title(
+    "Conservación de la rapidez"
+)
+
+plt.legend()
+
+plt.grid()
+
+plt.show()
+
+
+# ============================================================
+# GRÁFICA 4
+# ERROR EULER VS RK2
+# ============================================================
+
+plt.figure()
+
+plt.plot(
+    t,
+    error_euler,
+    label="Euler"
+)
+
+plt.plot(
+    t,
+    error_rk2,
+    label="RK2"
+)
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel("Error relativo [%]")
+
+plt.title(
+    "Error numérico en la rapidez"
+)
+
+plt.legend()
+
+plt.grid()
+
+plt.show()
