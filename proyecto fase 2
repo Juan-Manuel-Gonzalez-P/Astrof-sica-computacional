@@ -1,0 +1,311 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from IPython.display import HTML
+
+
+#constantes
+
+q = 1.602e-19          # carga del protón [C]
+m = 1.673e-27          # masa del protón [kg]
+
+RE = 6.378e6           # radio de la Tierra [m]
+
+B0_E = 3.07e-5         # campo ecuatorial terrestre [T]
+
+
+#campo magnetico
+
+def campo_tierra(r):
+
+    x, y, z = r
+
+    R = np.sqrt(x**2 + y**2 + z**2)
+
+    if R == 0:
+        return np.zeros(3)
+
+    factor = B0_E * RE**3 / R**5
+
+    Bx = factor * 3*x*z
+    By = factor * 3*y*z
+    Bz = factor * (3*z**2 - R**2)
+
+    return np.array([Bx, By, Bz])
+
+#ecuaciones de movimiento
+
+def derivadas(estado):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo_tierra(r)
+
+    drdt = v
+    dvdt = (q/m) * np.cross(v, B)
+
+    return np.concatenate((drdt, dvdt))
+
+#rk2
+def rk2(estado0, dt, pasos):
+
+    estados = np.zeros((pasos + 1, 6))
+
+    estados[0] = estado0
+
+    for i in range(pasos):
+
+        k1 = derivadas(estados[i])
+
+        estado_medio = estados[i] + (dt/2)*k1
+
+        k2 = derivadas(estado_medio)
+
+        estados[i+1] = estados[i] + dt*k2
+
+    return estados
+
+
+#energía del proton
+
+
+MeV = 1.602e-13        # 1 MeV en joules
+
+energia = 10 * MeV
+
+# Aproximación no relativista
+velocidad = np.sqrt(2 * energia / m)
+
+print("Velocidad del protón =", velocidad, "m/s")
+
+
+#angulo pitch
+
+alpha = np.radians(45)
+
+v_perp = velocidad * np.sin(alpha)
+v_par = velocidad * np.cos(alpha)
+
+v0 = np.array([
+    0.0,
+    v_perp,
+    v_par
+])
+
+
+#posicion inicial
+
+r0 = np.array([
+    1.6*RE,
+    0.0,
+    0.0
+])
+
+estado0 = np.concatenate((r0, v0))
+
+
+#parámetros
+
+dt = 2e-5
+
+tiempo_total = 2.0
+
+pasos = int(tiempo_total / dt)
+
+t = np.linspace(
+    0,
+    tiempo_total,
+    pasos + 1
+)
+
+
+
+
+print("Simulando...")
+
+solucion = rk2(
+    estado0,
+    dt,
+    pasos
+)
+
+print("Simulación terminada")
+
+
+#velocidad y posicion
+
+r_tierra = solucion[:, :3]
+
+v_tierra = solucion[:, 3:]
+
+
+#error
+
+rapidez = np.linalg.norm(
+    v_tierra,
+    axis=1
+)
+
+rapidez_inicial = np.linalg.norm(v0)
+
+error = (
+    np.abs(rapidez - rapidez_inicial)
+    / rapidez_inicial
+) * 100
+
+print()
+print("Rapidez inicial =", rapidez_inicial, "m/s")
+print("Error final =", error[-1], "%")
+
+
+#normalización
+
+x = r_tierra[:, 0] / RE
+y = r_tierra[:, 1] / RE
+z = r_tierra[:, 2] / RE
+
+
+#frames
+
+
+salto = 1000
+
+x_anim = x[::salto]
+y_anim = y[::salto]
+z_anim = z[::salto]
+
+print()
+print("Número original de puntos =", len(x))
+print("Número de frames usados =", len(x_anim))
+
+
+#figura3d
+
+fig = plt.figure(
+    figsize=(7, 7)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+#limites
+
+lim = 2.0
+
+ax.set_xlim(-lim, lim)
+ax.set_ylim(-lim, lim)
+ax.set_zlim(-lim, lim)
+
+ax.set_xlabel("x / RE")
+ax.set_ylabel("y / RE")
+ax.set_zlabel("z / RE")
+
+ax.set_title(
+    "Protón de 10 MeV en el campo magnético terrestre"
+)
+
+
+#diseñamos la esfera
+
+u = np.linspace(
+    0,
+    2*np.pi,
+    25
+)
+
+v = np.linspace(
+    0,
+    np.pi,
+    15
+)
+
+xs = np.outer(
+    np.cos(u),
+    np.sin(v)
+)
+
+ys = np.outer(
+    np.sin(u),
+    np.sin(v)
+)
+
+zs = np.outer(
+    np.ones(len(u)),
+    np.cos(v)
+)
+
+ax.plot_surface(
+    xs,
+    ys,
+    zs,
+    alpha=0.4
+)
+
+#rastro
+
+rastro, = ax.plot(
+    [],
+    [],
+    [],
+    linewidth=1.5
+)
+
+#particula
+
+particula, = ax.plot(
+    [],
+    [],
+    [],
+    marker="o",
+    markersize=7
+)
+
+
+#funcion de actualización
+
+def actualizar(i):
+
+    rastro.set_data(
+        x_anim[:i+1],
+        y_anim[:i+1]
+    )
+
+    rastro.set_3d_properties(
+        z_anim[:i+1]
+    )
+
+    particula.set_data(
+        [x_anim[i]],
+        [y_anim[i]]
+    )
+
+    particula.set_3d_properties(
+        [z_anim[i]]
+    )
+
+    return rastro, particula
+
+
+
+ CREAR ANIMACIÓN
+
+
+animacion = FuncAnimation(
+    fig,
+    actualizar,
+    frames=len(x_anim),
+    interval=40,
+    blit=False
+)
+
+plt.close()
+
+
+
+
+HTML(
+    animacion.to_jshtml()
+)
