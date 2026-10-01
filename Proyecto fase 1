@@ -1,23 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# ============================================================
-# CONSTANTES FÍSICAS
-# ============================================================
+#definimos las cnstantes
 
-q = 1.602e-19          # carga del protón [C]
-m = 1.673e-27          # masa del protón [kg]
+q = 1.602e-19          # carga del protón 
+m = 1.673e-27          # masa del protón 
 
-RE = 6.378e6           # radio de la Tierra [m]
-RM = 3.389e6           # radio de Marte [m]
+RE = 6.378e6           # radio de la Tierra 
+RM = 3.389e6           # radio de Marte 
 
-B0_E = 3.07e-5         # campo ecuatorial terrestre [T]
+B0_E = 3.07e-5         # campo ecuatorial terrestre 
 
 
-# ============================================================
-# CAMPO MAGNÉTICO DE LA TIERRA
-# Modelo dipolar
-# ============================================================
+#campo  de tierra
 
 def campo_tierra(r):
 
@@ -37,10 +32,7 @@ def campo_tierra(r):
     return np.array([Bx, By, Bz])
 
 
-# ============================================================
-# CAMPO DE UN DIPOLO LOCAL
-# Lo usamos para construir un Marte simplificado
-# ============================================================
+#campo de marte
 
 def dipolo_local(r, posicion, direccion, intensidad):
 
@@ -62,10 +54,6 @@ def dipolo_local(r, posicion, direccion, intensidad):
     return B
 
 
-# ============================================================
-# CAMPO MAGNÉTICO SIMPLIFICADO DE MARTE
-# Superposición de 3 anomalías magnéticas locales
-# ============================================================
 
 def campo_marte(r):
 
@@ -94,12 +82,7 @@ def campo_marte(r):
     return B1 + B2 + B3
 
 
-# ============================================================
-# ECUACIÓN DE MOVIMIENTO
-#
-# dr/dt = v
-# dv/dt = (q/m) v x B
-# ============================================================
+#ecuaciones de movimiento
 
 def derivadas(estado, campo):
 
@@ -114,9 +97,6 @@ def derivadas(estado, campo):
     return np.concatenate((drdt, dvdt))
 
 
-# ============================================================
-# MÉTODO DE EULER
-# ============================================================
 
 def euler(estado0, campo, dt, pasos):
 
@@ -134,9 +114,6 @@ def euler(estado0, campo, dt, pasos):
     return estados
 
 
-# ============================================================
-# MÉTODO RK2 - PUNTO MEDIO
-# ============================================================
 
 def rk2(estado0, campo, dt, pasos):
 
@@ -157,9 +134,7 @@ def rk2(estado0, campo, dt, pasos):
     return estados
 
 
-# ============================================================
-# CONDICIONES INICIALES
-# ============================================================
+#condiciones iniciales
 
 v0 = np.array([
     0.0,
@@ -186,9 +161,7 @@ estado_tierra = np.concatenate((r0_tierra, v0))
 estado_marte = np.concatenate((r0_marte, v0))
 
 
-# ============================================================
-# PARÁMETROS NUMÉRICOS
-# ============================================================
+#parametros numéricos
 
 dt = 2e-5             # paso temporal [s]
 
@@ -203,9 +176,6 @@ t = np.linspace(
 )
 
 
-# ============================================================
-# SIMULACIONES RK2
-# ============================================================
 
 print("Simulando Tierra...")
 
@@ -226,9 +196,6 @@ sol_marte = rk2(
 )
 
 
-# ============================================================
-# SIMULACIÓN EULER PARA COMPARAR ERROR
-# ============================================================
 
 sol_euler = euler(
     estado_tierra,
@@ -238,9 +205,7 @@ sol_euler = euler(
 )
 
 
-# ============================================================
-# EXTRAER POSICIONES Y VELOCIDADES
-# ============================================================
+
 
 r_tierra = sol_tierra[:, :3]
 v_tierra = sol_tierra[:, 3:]
@@ -251,9 +216,7 @@ v_marte = sol_marte[:, 3:]
 v_euler = sol_euler[:, 3:]
 
 
-# ============================================================
-# RAPIDEZ
-# ============================================================
+
 
 rapidez_tierra = np.linalg.norm(v_tierra, axis=1)
 rapidez_marte = np.linalg.norm(v_marte, axis=1)
@@ -262,9 +225,7 @@ rapidez_euler = np.linalg.norm(v_euler, axis=1)
 rapidez_inicial = np.linalg.norm(v0)
 
 
-# ============================================================
-# ERROR RELATIVO EN RAPIDEZ
-# ============================================================
+
 
 error_rk2 = (
     np.abs(rapidez_tierra - rapidez_inicial)
@@ -277,9 +238,7 @@ error_euler = (
 ) * 100
 
 
-# ============================================================
-# RESULTADOS NUMÉRICOS
-# ============================================================
+
 
 print()
 print("===================================")
@@ -300,10 +259,6 @@ print("Error final Euler:")
 print(error_euler[-1], "%")
 
 
-# ============================================================
-# GRÁFICA 1
-# TRAYECTORIA TIERRA
-# ============================================================
 
 fig = plt.figure()
 
@@ -329,10 +284,7 @@ ax.set_title(
 plt.show()
 
 
-# ============================================================
-# GRÁFICA 2
-# TRAYECTORIA MARTE
-# ============================================================
+
 
 fig = plt.figure()
 
@@ -358,10 +310,7 @@ ax.set_title(
 plt.show()
 
 
-# ============================================================
-# GRÁFICA 3
-# CONSERVACIÓN DE LA RAPIDEZ
-# ============================================================
+
 
 plt.figure()
 
@@ -391,10 +340,6 @@ plt.grid()
 plt.show()
 
 
-# ============================================================
-# GRÁFICA 4
-# ERROR EULER VS RK2
-# ============================================================
 
 plt.figure()
 
