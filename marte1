@@ -115,13 +115,11 @@ def campo_marte(r):
     return B1 + B2 + B3
 
 
-# Energía cinética del protón
 MeV = 1.602176634e-13
 
 K = 10 * MeV
 
 
-# Rapidez relativista
 gamma = 1 + K/(m*c**2)
 
 v_total = c * np.sqrt(
@@ -129,8 +127,7 @@ v_total = c * np.sqrt(
 )
 
 
-# Ecuaciones de movimiento
-def derivadas(estado):
+
 
     r = estado[:3]
     v = estado[3:]
@@ -181,8 +178,7 @@ def rk2(estado0, dt, pasos):
     return estados
 
 
-# Coloco el protón cerca de la región magnética principal
-# del hemisferio sur.
+
 r0 = np.array([
     0.0,
     0.0,
@@ -190,7 +186,7 @@ r0 = np.array([
 ])
 
 
-# Dirección del campo magnético en el punto inicial
+
 B_inicial = campo_marte(r0)
 
 Bhat = (
@@ -199,8 +195,7 @@ Bhat = (
 )
 
 
-# Uso el mismo pitch angle que en el caso terrestre
-alpha = np.radians(60)
+
 
 v_par = (
     v_total
@@ -213,8 +208,7 @@ v_perp = (
 )
 
 
-# Construyo una dirección perpendicular al campo
-referencia = np.array([
+
     1.0,
     0.0,
     0.0
@@ -226,8 +220,7 @@ direccion_perp = np.cross(
 )
 
 
-# Si por casualidad la referencia queda casi paralela
-# al campo, uso otra dirección.
+
 if np.linalg.norm(direccion_perp) < 1e-12:
 
     referencia = np.array([
@@ -248,8 +241,7 @@ direccion_perp = (
 )
 
 
-# La magnitud de la velocidad viene de la energía.
-# El pitch angle solamente fija la dirección inicial.
+
 v0 = (
     v_par*Bhat
     +
@@ -289,7 +281,6 @@ r = solucion[:, :3]
 v = solucion[:, 3:]
 
 
-# Posiciones expresadas en radios de Marte
 x = r[:, 0] / RM
 y = r[:, 1] / RM
 z = r[:, 2] / RM
@@ -344,9 +335,7 @@ for i in range(len(t)):
         )
 
 
-# Busco los cambios de signo de v_parallel.
-# En Marte un cambio de signo puede indicar una reflexión
-# local asociada a una de las anomalías magnéticas.
+
 indices_reflexion = []
 
 tiempos_reflexion = []
@@ -380,9 +369,7 @@ for i in range(
         )
 
 
-# Integro algunas líneas del campo de Marte.
-# A diferencia del dipolo terrestre, aquí no tengo una expresión
-# sencilla para dibujarlas directamente.
+
 def linea_campo(seed, direccion, ds=0.005*RM, pasos=800):
 
     puntos = [
@@ -428,7 +415,7 @@ def linea_campo(seed, direccion, ds=0.005*RM, pasos=800):
     )
 
 
-# Puntos desde los que voy a dibujar algunas líneas
+
 seeds = [
 
     np.array([
