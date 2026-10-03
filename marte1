@@ -1,0 +1,751 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Constantes físicas
+q = 1.602176634e-19
+m = 1.6726219e-27
+c = 2.99792458e8
+
+RM = 3.3895e6
+
+
+# Campo producido por un dipolo localizado
+def dipolo_local(r, posicion, direccion, C):
+
+    dr = r - posicion
+    distancia = np.linalg.norm(dr)
+
+    if distancia == 0:
+        return np.zeros(3)
+
+    direccion = direccion / np.linalg.norm(direccion)
+
+    producto = np.dot(
+        direccion,
+        dr
+    )
+
+    B = (
+        C / distancia**5
+        * (
+            3*producto*dr
+            - distancia**2*direccion
+        )
+    )
+
+    return B
+
+
+# Para Marte uso tres regiones magnéticas locales.
+# La idea es representar de forma sencilla que el planeta
+# no tiene un dipolo global como la Tierra.
+def campo_marte(r):
+
+    p1 = np.array([
+        0.0,
+        0.0,
+        -0.85*RM
+    ])
+
+    p2 = np.array([
+        0.35*RM,
+        0.10*RM,
+        -0.82*RM
+    ])
+
+    p3 = np.array([
+        -0.30*RM,
+        0.25*RM,
+        -0.80*RM
+    ])
+
+
+    d1 = np.array([
+        0.0,
+        0.0,
+        1.0
+    ])
+
+    d2 = np.array([
+        0.4,
+        0.1,
+        1.0
+    ])
+
+    d3 = np.array([
+        -0.3,
+        0.4,
+        1.0
+    ])
+
+
+    B_ref = 1.5e-6
+
+    profundidad = 0.15*RM
+
+    C = (
+        B_ref
+        * profundidad**3
+        / 2
+    )
+
+
+    B1 = dipolo_local(
+        r,
+        p1,
+        d1,
+        C
+    )
+
+    B2 = dipolo_local(
+        r,
+        p2,
+        d2,
+        0.8*C
+    )
+
+    B3 = dipolo_local(
+        r,
+        p3,
+        d3,
+        0.6*C
+    )
+
+    return B1 + B2 + B3
+
+
+# Energía cinética del protón
+MeV = 1.602176634e-13
+
+K = 10 * MeV
+
+
+# Rapidez relativista
+gamma = 1 + K/(m*c**2)
+
+v_total = c * np.sqrt(
+    1 - 1/gamma**2
+)
+
+
+# Ecuaciones de movimiento
+def derivadas(estado):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo_marte(r)
+
+    drdt = v
+
+    dvdt = (
+        q/(gamma*m)
+        * np.cross(v, B)
+    )
+
+    return np.concatenate(
+        (drdt, dvdt)
+    )
+
+
+# Integración con RK2
+def rk2(estado0, dt, pasos):
+
+    estados = np.zeros(
+        (pasos + 1, 6)
+    )
+
+    estados[0] = estado0
+
+    for i in range(pasos):
+
+        k1 = derivadas(
+            estados[i]
+        )
+
+        estado_medio = (
+            estados[i]
+            + dt*k1/2
+        )
+
+        k2 = derivadas(
+            estado_medio
+        )
+
+        estados[i+1] = (
+            estados[i]
+            + dt*k2
+        )
+
+    return estados
+
+
+# Coloco el protón cerca de la región magnética principal
+# del hemisferio sur.
+r0 = np.array([
+    0.0,
+    0.0,
+    -1.05*RM
+])
+
+
+# Dirección del campo magnético en el punto inicial
+B_inicial = campo_marte(r0)
+
+Bhat = (
+    B_inicial
+    / np.linalg.norm(B_inicial)
+)
+
+
+# Uso el mismo pitch angle que en el caso terrestre
+alpha = np.radians(60)
+
+v_par = (
+    v_total
+    * np.cos(alpha)
+)
+
+v_perp = (
+    v_total
+    * np.sin(alpha)
+)
+
+
+# Construyo una dirección perpendicular al campo
+referencia = np.array([
+    1.0,
+    0.0,
+    0.0
+])
+
+direccion_perp = np.cross(
+    Bhat,
+    referencia
+)
+
+
+# Si por casualidad la referencia queda casi paralela
+# al campo, uso otra dirección.
+if np.linalg.norm(direccion_perp) < 1e-12:
+
+    referencia = np.array([
+        0.0,
+        1.0,
+        0.0
+    ])
+
+    direccion_perp = np.cross(
+        Bhat,
+        referencia
+    )
+
+
+direccion_perp = (
+    direccion_perp
+    / np.linalg.norm(direccion_perp)
+)
+
+
+# La magnitud de la velocidad viene de la energía.
+# El pitch angle solamente fija la dirección inicial.
+v0 = (
+    v_par*Bhat
+    +
+    v_perp*direccion_perp
+)
+
+
+estado0 = np.concatenate(
+    (r0, v0)
+)
+
+
+# Parámetros numéricos
+dt = 2e-5
+
+tiempo_total = 3.0
+
+pasos = int(
+    tiempo_total/dt
+)
+
+t = np.linspace(
+    0,
+    tiempo_total,
+    pasos + 1
+)
+
+
+# Trayectoria del protón
+solucion = rk2(
+    estado0,
+    dt,
+    pasos
+)
+
+r = solucion[:, :3]
+v = solucion[:, 3:]
+
+
+# Posiciones expresadas en radios de Marte
+x = r[:, 0] / RM
+y = r[:, 1] / RM
+z = r[:, 2] / RM
+
+
+# Reviso cuánto cambia la rapidez durante la integración
+rapidez = np.linalg.norm(
+    v,
+    axis=1
+)
+
+rapidez_inicial = np.linalg.norm(
+    v0
+)
+
+error_rapidez = (
+    np.abs(
+        rapidez - rapidez_inicial
+    )
+    / rapidez_inicial
+) * 100
+
+
+# Calculo la componente paralela de la velocidad
+# y la intensidad del campo que encuentra la partícula
+v_parallel = np.zeros(
+    len(t)
+)
+
+B_modulo = np.zeros(
+    len(t)
+)
+
+
+for i in range(len(t)):
+
+    B = campo_marte(
+        r[i]
+    )
+
+    Bmag = np.linalg.norm(B)
+
+    B_modulo[i] = Bmag
+
+    if Bmag != 0:
+
+        Bhat_i = B/Bmag
+
+        v_parallel[i] = np.dot(
+            v[i],
+            Bhat_i
+        )
+
+
+# Busco los cambios de signo de v_parallel.
+# En Marte un cambio de signo puede indicar una reflexión
+# local asociada a una de las anomalías magnéticas.
+indices_reflexion = []
+
+tiempos_reflexion = []
+
+
+for i in range(
+    len(v_parallel) - 1
+):
+
+    if (
+        v_parallel[i]
+        * v_parallel[i+1]
+        < 0
+    ):
+
+        indices_reflexion.append(i)
+
+        t0 = t[i]
+        t1 = t[i+1]
+
+        vp0 = v_parallel[i]
+        vp1 = v_parallel[i+1]
+
+        t_reflexion = (
+            t0
+            - vp0*(t1 - t0)/(vp1 - vp0)
+        )
+
+        tiempos_reflexion.append(
+            t_reflexion
+        )
+
+
+# Integro algunas líneas del campo de Marte.
+# A diferencia del dipolo terrestre, aquí no tengo una expresión
+# sencilla para dibujarlas directamente.
+def linea_campo(seed, direccion, ds=0.005*RM, pasos=800):
+
+    puntos = [
+        seed.copy()
+    ]
+
+    r_linea = seed.copy()
+
+    for i in range(pasos):
+
+        B = campo_marte(
+            r_linea
+        )
+
+        Bmag = np.linalg.norm(B)
+
+        if Bmag == 0:
+            break
+
+        r_linea = (
+            r_linea
+            + direccion
+            * ds
+            * B/Bmag
+        )
+
+        distancia = np.linalg.norm(
+            r_linea
+        )
+
+        if distancia <= RM:
+            break
+
+        if distancia >= 3*RM:
+            break
+
+        puntos.append(
+            r_linea.copy()
+        )
+
+    return np.array(
+        puntos
+    )
+
+
+# Puntos desde los que voy a dibujar algunas líneas
+seeds = [
+
+    np.array([
+        0.0,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.15*RM,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        -0.15*RM,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.0,
+        0.15*RM,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.0,
+        -0.15*RM,
+        -1.02*RM
+    ])
+]
+
+
+# Gráfica a escala planetaria
+fig = plt.figure(
+    figsize=(8, 8)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+
+# Esfera de Marte
+u = np.linspace(
+    0,
+    2*np.pi,
+    40
+)
+
+theta = np.linspace(
+    0,
+    np.pi,
+    25
+)
+
+xs = np.outer(
+    np.cos(u),
+    np.sin(theta)
+)
+
+ys = np.outer(
+    np.sin(u),
+    np.sin(theta)
+)
+
+zs = np.outer(
+    np.ones(len(u)),
+    np.cos(theta)
+)
+
+
+ax.plot_surface(
+    xs,
+    ys,
+    zs,
+    alpha=0.4
+)
+
+
+# Trayectoria del protón
+salto = 10
+
+ax.plot(
+    x[::salto],
+    y[::salto],
+    z[::salto],
+    linewidth=1.2,
+    label="Protón"
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=40,
+    label="Posición inicial"
+)
+
+
+# Dibujo las líneas del campo local
+for seed in seeds:
+
+    adelante = linea_campo(
+        seed,
+        1
+    )
+
+    atras = linea_campo(
+        seed,
+        -1
+    )
+
+    linea = np.vstack((
+        atras[::-1],
+        adelante
+    ))
+
+    ax.plot(
+        linea[:, 0]/RM,
+        linea[:, 1]/RM,
+        linea[:, 2]/RM,
+        linewidth=0.7,
+        alpha=0.35
+    )
+
+
+lim = 3.0
+
+ax.set_xlim(
+    -lim,
+    lim
+)
+
+ax.set_ylim(
+    -lim,
+    lim
+)
+
+ax.set_zlim(
+    -lim,
+    lim
+)
+
+ax.set_box_aspect(
+    (1, 1, 1)
+)
+
+ax.set_xlabel(
+    "x / $R_M$"
+)
+
+ax.set_ylabel(
+    "y / $R_M$"
+)
+
+ax.set_zlabel(
+    "z / $R_M$"
+)
+
+ax.set_title(
+    "Trayectoria del protón - Marte"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Para observar mejor el movimiento local tomo solamente
+# la primera parte de la trayectoria.
+tiempo_zoom = 0.10
+
+indice_zoom = int(
+    tiempo_zoom/dt
+)
+
+
+fig = plt.figure(
+    figsize=(8, 7)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+ax.plot(
+    x[:indice_zoom],
+    y[:indice_zoom],
+    z[:indice_zoom],
+    linewidth=1.2
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=45,
+    label="Posición inicial"
+)
+
+ax.set_xlabel(
+    "x / $R_M$"
+)
+
+ax.set_ylabel(
+    "y / $R_M$"
+)
+
+ax.set_zlabel(
+    "z / $R_M$"
+)
+
+ax.set_title(
+    "Zoom local de la trayectoria del protón - Marte"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Componente de la velocidad paralela al campo
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    v_parallel
+)
+
+plt.axhline(
+    0,
+    linestyle="--",
+    linewidth=1
+)
+
+
+for i in indices_reflexion:
+
+    plt.scatter(
+        t[i],
+        v_parallel[i],
+        s=20
+    )
+
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    r"$v_{\parallel}$ [m/s]"
+)
+
+plt.title(
+    "Velocidad paralela al campo magnético"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Intensidad del campo que encuentra el protón
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    B_modulo
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "|B| [T]"
+)
+
+plt.title(
+    "Campo magnético a lo largo de la trayectoria"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Error numérico del método RK2
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    error_rapidez
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "Error relativo [%]"
+)
+
+plt.title(
+    "Error en la conservación de la rapidez"
+)
+
+plt.grid()
+
+plt.show()
