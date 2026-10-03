@@ -1,0 +1,657 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Constantes físicas del protón.
+# Estas no cambian entre Tierra y Marte ni entre los distintos casos.
+q = 1.602176634e-19       # carga del protón [C]
+m = 1.6726219e-27         # masa del protón [kg]
+c = 2.99792458e8          # velocidad de la luz [m/s]
+
+
+# Radio del planeta.
+#
+# TIERRA:
+# R = 6.378e6 m
+#
+# MARTE:
+# R = 3.3895e6 m
+
+R = ...
+
+
+# Campo magnético.
+
+
+# TIERRA:
+# se usa un campo dipolar global.
+
+# B(r) = B0 * R_E^3 / r^5 *
+#        (3xz, 3yz, 3z^2 - r^2)
+
+# con B0 = 3.07e-5 T.
+
+# En código se utilizó:
+
+# def campo(r):
+
+#     x, y, z = r
+#     Rpos = np.sqrt(x**2 + y**2 + z**2)
+
+#     factor = B0 * RE**3 / Rpos**5
+
+#   Bx = factor * 3*x*z
+#   By = factor * 3*y*z
+#   Bz = factor * (3*z**2 - Rpos**2)
+#
+#     return np.array([Bx, By, Bz])
+
+# MARTE:
+
+# Se aproximó el campo como la suma de tres dipolos locales
+# colocados debajo de la superficie.
+#
+# B_Marte = B1 + B2 + B3
+#
+# Cada término se calculó con:
+#
+# B = C/r^5 * [3(m_hat · r)r - r^2 m_hat]
+#
+
+
+
+
+
+# Energía cinética del protón.
+#
+# En todas las simulaciones principales se mantiene
+# K = 10 MeV para que los casos puedan compararse
+# usando la misma partícula.
+
+MeV = 1.602176634e-13
+
+K = 10 * MeV
+
+
+# A partir de la energía calculo el factor relativista.
+
+
+gamma = 1 + K/(m*c**2)
+
+
+v_total = c * np.sqrt(
+    1 - 1/gamma**2
+)
+
+
+# Ecuaciones de movimiento.
+
+ dr/dt = v
+
+ dv/dt = q/(gamma*m) * (v x B)
+
+
+def derivadas(estado):
+
+    # Las tres primeras componentes representan la posición.
+    r = estado[:3]
+
+    # Las tres últimas representan la velocidad.
+    v = estado[3:]
+
+    # Se evalúa el campo magnético en la posición actual.
+    B = campo(r)
+
+    
+    drdt = v
+
+    # La fuerza de Lorentz determina cómo cambia
+    # la dirección de la velocidad.
+    dvdt = (
+        q/(gamma*m)
+        * np.cross(v, B)
+    )
+
+    # Junto posición y velocidad para integrar
+    # las seis ecuaciones al mismo tiempo.
+    return np.concatenate(
+        (drdt, dvdt)
+    )
+
+
+# Método Runge-Kutta de segundo orden.
+
+
+def rk2(estado0, dt, tiempo_total):
+
+    pasos = int(
+        tiempo_total/dt
+    )
+
+    estados = [
+        estado0.copy()
+    ]
+
+    tiempos = [
+        0.0
+    ]
+
+
+    for i in range(pasos):
+
+        estado = estados[-1]
+
+        # Primera pendiente
+        k1 = derivadas(
+            estado
+        )
+
+        # Estimación en la mitad del intervalo
+        estado_medio = (
+            estado
+            + dt*k1/2
+        )
+
+        # Segunda pendiente
+        k2 = derivadas(
+            estado_medio
+        )
+
+        # Nuevo estado
+        nuevo_estado = (
+            estado
+            + dt*k2
+        )
+
+        estados.append(
+            nuevo_estado
+        )
+
+        tiempos.append(
+            (i + 1)*dt
+        )
+
+
+        # Para los casos de partículas incidentes,
+        # se puede detener la simulación si el protón
+        # llega a la superficie:
+        #
+        # if np.linalg.norm(nuevo_estado[:3]) <= R:
+        #     break
+
+
+    return (
+        np.array(tiempos),
+        np.array(estados)
+    )
+
+
+
+# CONDICIONES INICIALES
+
+
+
+# Caso 1:
+
+# Tierra:
+
+# r0 = (1.6 R_E, 0, 0)
+
+# Marte:
+
+# r0 = (0, 0, -1.05 R_M)
+
+# En Marte se eligió esa posición porque está cerca
+# de la anomalía magnética principal del modelo.
+
+
+
+
+# En este primer caso la dirección de la velocidad
+# se construye respecto al campo magnético local.
+
+# Primero:
+
+# B_inicial = campo(r0)
+
+# Bhat = B_inicial / |B_inicial|
+
+# Después se escoge un angulo
+
+# alpha = 60 grados
+
+# v_parallel = v_total*cos(alpha)
+
+# v_perp = v_total*sin(alpha)
+
+
+# v0 = v_parallel*Bhat
+#      + v_perp*direccion_perpendicular
+
+
+
+
+
+
+
+# Caso 2:
+
+
+# La posición inicial se coloca lejos del planeta.
+
+# Para Tierra:
+
+# r0 = (10 R_E, 0, 0)
+
+
+# Para Marte usamos:
+
+# r0 = (10 R_M, 0, -0.45 R_M)
+
+# En Marte se desplazó un poco hacia el hemisferio sur
+# para que la trayectoria pase cerca de las anomalías.
+
+
+#  el protón se mueve
+
+# v0 = (-v_total, 0, 0)
+
+# La magnitud sigue siendo la correspondiente a 10 MeV.
+# Solo cambia la orientación
+
+
+
+# Caso 3:
+
+
+# Se usó:
+
+# r0 = (10 R, 3 R, 0)
+
+# tanto para Tierra como para Marte.
+
+# La posición está desplazada en y, pero el protón apunte exactamente hacia el centro.
+
+
+#  la dirección hacia el origen:
+#
+# direccion = -r0 / |r0|
+#
+# y luego:
+#
+# v0 = v_total * direccion
+#
+#
+# Si no existiera campo magnético, esta trayectoria
+# llegaría directamente al planeta
+
+
+
+# Caso 4:
+
+
+# r0 = (10 R, 1.5 R, 0)
+
+# y:
+
+# v0 = (-v_total, 0, 0)
+
+
+# Si no existiera campo magnético, el movimiento sería
+# una línea recta con:
+
+# y = 1.5 R
+
+# Como 1.5 R > R, la partícula pasaría al lado
+# del planeta sin tocar su superficie.
+
+# Después se compara esa línea recta con la trayectoria
+# real producida por el campo magnético.
+
+
+
+# Una vez elegidos r0 y v0 para el caso que se quiere estudiar,
+# se construye el estado inicial.
+
+estado0 = np.concatenate(
+    (r0, v0)
+)
+
+
+
+# Parámetros numéricos.
+#
+# Para el protón que ya está dentro del campo usamos:
+#
+# dt = 2e-5 s
+# tiempo_total = 3.0 s
+#
+#
+# Para los protones que llegan desde lejos usamos:
+#
+# dt = 5e-6 s
+# tiempo_total = aproximadamente 2.0 s
+#
+# Se usa un dt menor porque queremos resolver mejor
+# la curvatura de la trayectoria mientras la partícula
+# se aproxima al planeta.
+
+dt = ...
+tiempo_total = ...
+
+
+
+# Se resuelven las ecuaciones de movimiento.
+
+t, solucion = rk2(
+    estado0,
+    dt,
+    tiempo_total
+)
+
+
+
+# Separo posición y velocidad de la solución.
+
+r = solucion[:, :3]
+v = solucion[:, 3:]
+
+
+
+# Normalizo la posición usando el radio del planeta.
+# Esto permite expresar las gráficas en radios terrestres
+# o radios marcianos en lugar de metros.
+
+x = r[:, 0] / R
+y = r[:, 1] / R
+z = r[:, 2] / R
+
+
+
+# Distancia de la partícula al centro del planeta.
+#
+
+# Permite saber si la partícula:
+#
+# - sigue acercándose,
+# - alcanza una distancia mínima,
+# - impacta,
+# - o vuelve a alejarse.
+
+distancia = (
+    np.linalg.norm(
+        r,
+        axis=1
+    )
+    / R
+)
+
+
+
+# Calculo la rapidez en cada instante.
+
+rapidez = np.linalg.norm(
+    v,
+    axis=1
+)
+
+rapidez_inicial = np.linalg.norm(
+    v0
+)
+
+
+
+# Como el modelo utiliza solamente un campo magnético,
+# este no debería cambiar la energía cinética del protón.
+#
+# Por eso la rapidez debe mantenerse aproximadamente constante.
+# Uso esta propiedad para comprobar el error del método RK2.
+
+error_rapidez = (
+    np.abs(
+        rapidez
+        - rapidez_inicial
+    )
+    / rapidez_inicial
+) * 100
+
+
+
+# Magnitud del campo que experimenta la partícula
+# a lo largo de su trayectoria.
+
+B_modulo = np.zeros(
+    len(t)
+)
+
+
+# También se calcular la velocidad paralela al campo.
+
+
+v_parallel = np.zeros(
+    len(t)
+)
+
+
+for i in range(len(t)):
+
+    B = campo(
+        r[i]
+    )
+
+    Bmag = np.linalg.norm(
+        B
+    )
+
+    B_modulo[i] = Bmag
+
+
+    if Bmag != 0:
+
+        Bhat = B/Bmag
+
+        v_parallel[i] = np.dot(
+            v[i],
+            Bhat
+        )
+
+
+
+
+
+#Codigo de grafica
+
+u = np.linspace(
+    0,
+    2*np.pi,
+    40
+)
+
+theta = np.linspace(
+    0,
+    np.pi,
+    25
+)
+
+xs = np.outer(
+    np.cos(u),
+    np.sin(theta)
+)
+
+ys = np.outer(
+    np.sin(u),
+    np.sin(theta)
+)
+
+zs = np.outer(
+    np.ones(len(u)),
+    np.cos(theta)
+)
+
+
+
+# En esta parte se grafica la trayectoria 3D.
+
+
+fig = plt.figure(
+    figsize=(9, 8)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+
+ax.plot_surface(
+    xs,
+    ys,
+    zs,
+    alpha=0.4
+)
+
+
+ax.plot(
+    x,
+    y,
+    z,
+    label="Trayectoria del protón"
+)
+
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    label="Posición inicial"
+)
+
+
+ax.set_xlabel(
+    "x / R"
+)
+
+ax.set_ylabel(
+    "y / R"
+)
+
+ax.set_zlabel(
+    "z / R"
+)
+
+ax.legend()
+
+plt.show()
+
+
+
+
+
+
+# Distancia al centro del planeta.
+# Esta gráfica ayuda a determinar la máxima aproximación.
+
+plt.figure()
+
+plt.plot(
+    t,
+    distancia
+)
+
+plt.axhline(
+    1,
+    linestyle="--"
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "r / R"
+)
+
+plt.grid()
+
+plt.show()
+
+
+
+# Campo magnético experimentado por el protón.
+#
+# Permite relacionar la curvatura de la trayectoria
+# con el aumento o disminución de |B|.
+
+plt.figure()
+
+plt.plot(
+    t,
+    B_modulo
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "|B| [T]"
+)
+
+plt.grid()
+
+plt.show()
+
+
+
+# Velocidad paralela al campo.
+
+
+plt.figure()
+
+plt.plot(
+    t,
+    v_parallel
+)
+
+plt.axhline(
+    0,
+    linestyle="--"
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    r"$v_{\parallel}$ [m/s]"
+)
+
+plt.grid()
+
+plt.show()
+
+
+
+# Error en la conservación de la rapidez.
+#
+# Esta gráfica sirve para comprobar que el resultado
+# numérico de RK2 
+
+plt.figure()
+
+plt.plot(
+    t,
+    error_rapidez
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "Error relativo [%]"
+)
+
+plt.grid()
+
+plt.show()
