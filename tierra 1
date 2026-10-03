@@ -1,0 +1,552 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Constantes físicas
+q = 1.602176634e-19
+m = 1.6726219e-27
+c = 2.99792458e8
+
+RE = 6.378e6
+B0 = 3.07e-5
+
+
+# Campo dipolar terrestre
+def campo_tierra(r):
+
+    x, y, z = r
+    R = np.sqrt(x**2 + y**2 + z**2)
+
+    if R == 0:
+        return np.zeros(3)
+
+    factor = B0 * RE**3 / R**5
+
+    Bx = factor * 3*x*z
+    By = factor * 3*y*z
+    Bz = factor * (3*z**2 - R**2)
+
+    return np.array([Bx, By, Bz])
+
+
+# Energía cinética del protón
+MeV = 1.602176634e-13
+K = 10 * MeV
+
+
+# A partir de la energía calculo gamma y la rapidez
+gamma = 1 + K/(m*c**2)
+
+v_total = c * np.sqrt(
+    1 - 1/gamma**2
+)
+
+
+# Ecuaciones de movimiento
+def derivadas(estado):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo_tierra(r)
+
+    drdt = v
+
+    dvdt = (
+        q/(gamma*m)
+        * np.cross(v, B)
+    )
+
+    return np.concatenate((drdt, dvdt))
+
+
+# Integración con RK2
+def rk2(estado0, dt, pasos):
+
+    estados = np.zeros((pasos + 1, 6))
+    estados[0] = estado0
+
+    for i in range(pasos):
+
+        k1 = derivadas(estados[i])
+
+        estado_medio = (
+            estados[i]
+            + dt*k1/2
+        )
+
+        k2 = derivadas(estado_medio)
+
+        estados[i+1] = (
+            estados[i]
+            + dt*k2
+        )
+
+    return estados
+
+
+# El protón comienza a 1.6 radios terrestres,
+# sobre el ecuador magnético
+r0 = np.array([
+    1.6*RE,
+    0.0,
+    0.0
+])
+
+
+# Dirección del campo en la posición inicial
+B_inicial = campo_tierra(r0)
+
+Bhat = (
+    B_inicial
+    / np.linalg.norm(B_inicial)
+)
+
+
+# Uso un pitch angle de 60 grados para que exista
+# movimiento paralelo y perpendicular al campo
+alpha = np.radians(60)
+
+v_par = (
+    v_total
+    * np.cos(alpha)
+)
+
+v_perp = (
+    v_total
+    * np.sin(alpha)
+)
+
+
+# Busco una dirección perpendicular al campo inicial
+referencia = np.array([
+    1.0,
+    0.0,
+    0.0
+])
+
+direccion_perp = np.cross(
+    Bhat,
+    referencia
+)
+
+direccion_perp = (
+    direccion_perp
+    / np.linalg.norm(direccion_perp)
+)
+
+
+# La magnitud de la velocidad viene de los 10 MeV.
+# El pitch angle solamente determina su dirección.
+v0 = (
+    v_par*Bhat
+    +
+    v_perp*direccion_perp
+)
+
+
+estado0 = np.concatenate(
+    (r0, v0)
+)
+
+
+# Parámetros numéricos
+dt = 2e-5
+tiempo_total = 3.0
+
+pasos = int(
+    tiempo_total/dt
+)
+
+t = np.linspace(
+    0,
+    tiempo_total,
+    pasos + 1
+)
+
+
+# Resolución de la trayectoria
+solucion = rk2(
+    estado0,
+    dt,
+    pasos
+)
+
+r = solucion[:, :3]
+v = solucion[:, 3:]
+
+
+# Posiciones expresadas en radios terrestres
+x = r[:, 0] / RE
+y = r[:, 1] / RE
+z = r[:, 2] / RE
+
+
+# La rapidez debería mantenerse casi constante,
+# porque la fuerza magnética es perpendicular a la velocidad
+rapidez = np.linalg.norm(
+    v,
+    axis=1
+)
+
+rapidez_inicial = np.linalg.norm(
+    v0
+)
+
+error_rapidez = (
+    np.abs(rapidez - rapidez_inicial)
+    / rapidez_inicial
+) * 100
+
+
+# Calculo la velocidad paralela al campo y la intensidad de B
+v_parallel = np.zeros(len(t))
+B_modulo = np.zeros(len(t))
+
+for i in range(len(t)):
+
+    B = campo_tierra(r[i])
+    Bmag = np.linalg.norm(B)
+
+    B_modulo[i] = Bmag
+
+    if Bmag != 0:
+
+        Bhat_i = B/Bmag
+
+        v_parallel[i] = np.dot(
+            v[i],
+            Bhat_i
+        )
+
+
+# Busco cambios de signo de v_parallel.
+# Sirven para localizar aproximadamente los puntos espejo.
+indices_espejo = []
+tiempos_espejo = []
+
+for i in range(len(v_parallel) - 1):
+
+    if v_parallel[i] * v_parallel[i+1] < 0:
+
+        indices_espejo.append(i)
+
+        t0 = t[i]
+        t1 = t[i+1]
+
+        vp0 = v_parallel[i]
+        vp1 = v_parallel[i+1]
+
+        t_espejo = (
+            t0
+            - vp0*(t1 - t0)/(vp1 - vp0)
+        )
+
+        tiempos_espejo.append(
+            t_espejo
+        )
+
+
+# Gráfica de la Tierra completa
+fig = plt.figure(
+    figsize=(8, 8)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+
+# Superficie de la Tierra
+u = np.linspace(
+    0,
+    2*np.pi,
+    40
+)
+
+theta = np.linspace(
+    0,
+    np.pi,
+    25
+)
+
+xs = np.outer(
+    np.cos(u),
+    np.sin(theta)
+)
+
+ys = np.outer(
+    np.sin(u),
+    np.sin(theta)
+)
+
+zs = np.outer(
+    np.ones(len(u)),
+    np.cos(theta)
+)
+
+ax.plot_surface(
+    xs,
+    ys,
+    zs,
+    alpha=0.4
+)
+
+
+# Trayectoria del protón
+salto = 10
+
+ax.plot(
+    x[::salto],
+    y[::salto],
+    z[::salto],
+    linewidth=1.2,
+    label="Protón"
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=40,
+    label="Posición inicial"
+)
+
+
+# Algunas líneas del campo dipolar
+theta_linea = np.linspace(
+    0.01,
+    np.pi - 0.01,
+    500
+)
+
+L_values = [
+    1.3,
+    1.6,
+    2.0,
+    2.5,
+    3.0
+]
+
+phis = [
+    0,
+    np.pi/2,
+    np.pi,
+    3*np.pi/2
+]
+
+for phi in phis:
+
+    for L in L_values:
+
+        rr = (
+            L
+            * np.sin(theta_linea)**2
+        )
+
+        x_linea = (
+            rr
+            * np.sin(theta_linea)
+            * np.cos(phi)
+        )
+
+        y_linea = (
+            rr
+            * np.sin(theta_linea)
+            * np.sin(phi)
+        )
+
+        z_linea = (
+            rr
+            * np.cos(theta_linea)
+        )
+
+        mascara = rr >= 1
+
+        ax.plot(
+            x_linea[mascara],
+            y_linea[mascara],
+            z_linea[mascara],
+            linewidth=0.6,
+            alpha=0.25
+        )
+
+
+lim = 3
+
+ax.set_xlim(-lim, lim)
+ax.set_ylim(-lim, lim)
+ax.set_zlim(-lim, lim)
+
+ax.set_box_aspect(
+    (1, 1, 1)
+)
+
+ax.set_xlabel(
+    "x / $R_E$"
+)
+
+ax.set_ylabel(
+    "y / $R_E$"
+)
+
+ax.set_zlabel(
+    "z / $R_E$"
+)
+
+ax.set_title(
+    "Trayectoria del protón - Tierra"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Para ver los giros tomo solamente una parte inicial
+# de la trayectoria y dejo que matplotlib ajuste la escala
+tiempo_zoom = 0.05
+
+indice_zoom = int(
+    tiempo_zoom/dt
+)
+
+fig = plt.figure(
+    figsize=(8, 7)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+ax.plot(
+    x[:indice_zoom],
+    y[:indice_zoom],
+    z[:indice_zoom],
+    linewidth=1.2
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=45,
+    label="Posición inicial"
+)
+
+ax.set_xlabel(
+    "x / $R_E$"
+)
+
+ax.set_ylabel(
+    "y / $R_E$"
+)
+
+ax.set_zlabel(
+    "z / $R_E$"
+)
+
+ax.set_title(
+    "Zoom local de la trayectoria del protón"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Velocidad paralela al campo
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    v_parallel
+)
+
+plt.axhline(
+    0,
+    linestyle="--",
+    linewidth=1
+)
+
+for i in indices_espejo:
+
+    plt.scatter(
+        t[i],
+        v_parallel[i],
+        s=20
+    )
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    r"$v_{\parallel}$ [m/s]"
+)
+
+plt.title(
+    "Velocidad paralela al campo magnético"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Intensidad del campo que encuentra el protón
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    B_modulo
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "|B| [T]"
+)
+
+plt.title(
+    "Campo magnético a lo largo de la trayectoria"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Error numérico del método
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    error_rapidez
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "Error relativo [%]"
+)
+
+plt.title(
+    "Error en la conservación de la rapidez"
+)
+
+plt.grid()
+
+plt.show()
