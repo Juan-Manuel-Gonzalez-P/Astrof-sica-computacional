@@ -1,0 +1,339 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Constantes físicas
+q = 1.602176634e-19
+m = 1.6726219e-27
+c = 2.99792458e8
+
+RE = 6.378e6
+B0 = 3.07e-5
+
+
+# Campo dipolar de la Tierra
+def campo_tierra(r):
+
+    x, y, z = r
+    R = np.sqrt(x**2 + y**2 + z**2)
+
+    if R == 0:
+        return np.zeros(3)
+
+    factor = B0 * RE**3 / R**5
+
+    Bx = factor * 3*x*z
+    By = factor * 3*y*z
+    Bz = factor * (3*z**2 - R**2)
+
+    return np.array([Bx, By, Bz])
+
+
+# Energía del protón
+MeV = 1.602176634e-13
+K = 10 * MeV
+
+
+# Rapidez relativista
+gamma = 1 + K/(m*c**2)
+
+v_total = c * np.sqrt(
+    1 - 1/gamma**2
+)
+
+
+# Ecuaciones de movimiento
+def derivadas(estado):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo_tierra(r)
+
+    drdt = v
+    dvdt = (q/(gamma*m)) * np.cross(v, B)
+
+    return np.concatenate((drdt, dvdt))
+
+
+# Integración con RK2
+def rk2(estado0, dt, tiempo_total):
+
+    pasos = int(tiempo_total/dt)
+
+    estados = [estado0.copy()]
+    tiempos = [0.0]
+
+    for i in range(pasos):
+
+        estado = estados[-1]
+
+        k1 = derivadas(estado)
+
+        estado_medio = estado + dt*k1/2
+
+        k2 = derivadas(estado_medio)
+
+        nuevo_estado = estado + dt*k2
+
+        estados.append(nuevo_estado)
+        tiempos.append((i + 1)*dt)
+
+        distancia = np.linalg.norm(nuevo_estado[:3])
+
+        if distancia <= RE:
+            break
+
+    return np.array(tiempos), np.array(estados)
+
+
+# Posición inicial
+r0 = np.array([
+    3.0*RE,
+    0.0,
+    0.0
+])
+
+
+# Velocidad inicial dirigida hacia la Tierra
+v0 = np.array([
+    -v_total,
+    0.0,
+    0.0
+])
+
+
+estado0 = np.concatenate((r0, v0))
+
+
+# Parámetros numéricos
+dt = 5e-6
+tiempo_total = 0.8
+
+
+# Integración
+t, solucion = rk2(estado0, dt, tiempo_total)
+
+r = solucion[:, :3]
+v = solucion[:, 3:]
+
+
+# Posiciones en radios terrestres
+x = r[:, 0] / RE
+y = r[:, 1] / RE
+z = r[:, 2] / RE
+
+
+# Distancia al centro de la Tierra
+distancia = np.linalg.norm(r, axis=1) / RE
+
+
+# Rapidez y error numérico
+rapidez = np.linalg.norm(v, axis=1)
+rapidez_inicial = np.linalg.norm(v0)
+
+error_rapidez = (
+    np.abs(rapidez - rapidez_inicial)
+    / rapidez_inicial
+) * 100
+
+
+# Campo magnético y velocidad paralela
+B_modulo = np.zeros(len(t))
+v_parallel = np.zeros(len(t))
+
+for i in range(len(t)):
+
+    B = campo_tierra(r[i])
+    Bmag = np.linalg.norm(B)
+
+    B_modulo[i] = Bmag
+
+    if Bmag != 0:
+        Bhat = B / Bmag
+        v_parallel[i] = np.dot(v[i], Bhat)
+
+
+# Ángulo de desviación entre velocidad inicial y final
+producto = np.dot(v[0], v[-1])
+
+cos_angulo = producto / (
+    np.linalg.norm(v[0]) * np.linalg.norm(v[-1])
+)
+
+cos_angulo = np.clip(cos_angulo, -1, 1)
+
+angulo_desviacion = np.degrees(np.arccos(cos_angulo))
+
+
+# Malla para la esfera terrestre
+u = np.linspace(0, 2*np.pi, 40)
+theta = np.linspace(0, np.pi, 25)
+
+xs = np.outer(np.cos(u), np.sin(theta))
+ys = np.outer(np.sin(u), np.sin(theta))
+zs = np.outer(np.ones(len(u)), np.cos(theta))
+
+
+# Trayectoria a escala planetaria
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(111, projection="3d")
+
+ax.plot_surface(xs, ys, zs, alpha=0.4)
+
+salto = 10
+
+ax.plot(
+    x[::salto],
+    y[::salto],
+    z[::salto],
+    linewidth=1.3,
+    label="Trayectoria del protón"
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=45,
+    label="Posición inicial"
+)
+
+
+# Líneas del campo dipolar
+theta_linea = np.linspace(0.01, np.pi - 0.01, 500)
+
+L_values = [1.3, 1.6, 2.0, 2.5, 3.0]
+phis = [0, np.pi/2, np.pi, 3*np.pi/2]
+
+for phi in phis:
+
+    for L in L_values:
+
+        rr = L * np.sin(theta_linea)**2
+
+        x_linea = rr * np.sin(theta_linea) * np.cos(phi)
+        y_linea = rr * np.sin(theta_linea) * np.sin(phi)
+        z_linea = rr * np.cos(theta_linea)
+
+        mascara = rr >= 1
+
+        ax.plot(
+            x_linea[mascara],
+            y_linea[mascara],
+            z_linea[mascara],
+            linewidth=0.6,
+            alpha=0.25
+        )
+
+lim = 3.2
+
+ax.set_xlim(-lim, lim)
+ax.set_ylim(-lim, lim)
+ax.set_zlim(-lim, lim)
+
+ax.set_box_aspect((1, 1, 1))
+
+ax.set_xlabel("x / $R_E$")
+ax.set_ylabel("y / $R_E$")
+ax.set_zlabel("z / $R_E$")
+
+ax.set_title("Protón incidente sobre el campo magnético terrestre")
+ax.legend()
+
+plt.show()
+
+
+# Gráfica local para ver el movimiento ciclotrón
+# Tomo solo un intervalo corto al inicio
+tiempo_ciclotron = 0.01
+indice_ciclotron = int(tiempo_ciclotron / dt)
+
+x_local = (r[:indice_ciclotron, 0] - r[0, 0]) / RE
+y_local = (r[:indice_ciclotron, 1] - r[0, 1]) / RE
+
+plt.figure(figsize=(7, 6))
+
+plt.plot(
+    x_local,
+    y_local,
+    label="Movimiento ciclotrón"
+)
+
+plt.scatter(
+    x_local[0],
+    y_local[0],
+    s=40,
+    label="Inicio"
+)
+
+plt.xlabel(r"$\Delta x / R_E$")
+plt.ylabel(r"$\Delta y / R_E$")
+
+plt.title("Zoom local del movimiento ciclotrón")
+
+plt.axis("equal")
+plt.grid()
+plt.legend()
+
+plt.show()
+
+
+# Distancia al planeta
+plt.figure(figsize=(9, 5))
+
+plt.plot(t, distancia)
+
+plt.axhline(1, linestyle="--")
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel(r"$r/R_E$")
+
+plt.title("Distancia del protón al centro de la Tierra")
+
+plt.grid()
+plt.show()
+
+
+# Campo magnético a lo largo de la trayectoria
+plt.figure(figsize=(9, 5))
+
+plt.plot(t, B_modulo)
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel("|B| [T]")
+
+plt.title("Campo magnético encontrado por el protón")
+
+plt.grid()
+plt.show()
+
+
+# Velocidad paralela al campo
+plt.figure(figsize=(9, 5))
+
+plt.plot(t, v_parallel)
+
+plt.axhline(0, linestyle="--", linewidth=1)
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel(r"$v_{\parallel}$ [m/s]")
+
+plt.title("Velocidad paralela al campo")
+
+plt.grid()
+plt.show()
+
+
+# Error numérico
+plt.figure(figsize=(9, 5))
+
+plt.plot(t, error_rapidez)
+
+plt.xlabel("Tiempo [s]")
+plt.ylabel("Error relativo [%]")
+
+plt.title("Error en la conservación de la rapidez")
+
+plt.grid()
+plt.show()
