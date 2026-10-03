@@ -11,19 +11,19 @@ c = 2.99792458e8          # velocidad de la luz [m/s]
 
 # Radio del planeta.
 #
-# TIERRA:
+# Tierra:
 # R = 6.378e6 m
 #
-# MARTE:
+# Marte:
 # R = 3.3895e6 m
 
-R = ...
+
 
 
 # Campo magnético.
 
 
-# TIERRA:
+# Tierra:
 # se usa un campo dipolar global.
 
 # B(r) = B0 * R_E^3 / r^5 *
@@ -187,7 +187,7 @@ def rk2(estado0, dt, tiempo_total):
 
 
 
-# CONDICIONES INICIALES
+# Condiciones inciales
 
 
 
