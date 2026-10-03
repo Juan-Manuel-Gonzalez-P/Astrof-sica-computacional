@@ -1,0 +1,697 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# Constantes físicas
+q = 1.602176634e-19
+m = 1.6726219e-27
+c = 2.99792458e8
+
+RM = 3.3895e6
+
+
+# Campo producido por un dipolo magnético localizado
+def dipolo_local(r, posicion, direccion, C):
+
+    dr = r - posicion
+    distancia = np.linalg.norm(dr)
+
+    if distancia == 0:
+        return np.zeros(3)
+
+    direccion = direccion / np.linalg.norm(direccion)
+
+    producto = np.dot(direccion, dr)
+
+    B = (
+        C / distancia**5
+        * (
+            3*producto*dr
+            - distancia**2*direccion
+        )
+    )
+
+    return B
+
+
+# Para Marte uso tres anomalías magnéticas locales.
+# Están colocadas principalmente en el hemisferio sur.
+def campo_marte(r):
+
+    p1 = np.array([
+        0.0,
+        0.0,
+        -0.85*RM
+    ])
+
+    p2 = np.array([
+        0.35*RM,
+        0.10*RM,
+        -0.82*RM
+    ])
+
+    p3 = np.array([
+        -0.30*RM,
+        0.25*RM,
+        -0.80*RM
+    ])
+
+
+    d1 = np.array([
+        0.0,
+        0.0,
+        1.0
+    ])
+
+    d2 = np.array([
+        0.4,
+        0.1,
+        1.0
+    ])
+
+    d3 = np.array([
+        -0.3,
+        0.4,
+        1.0
+    ])
+
+
+    # Tomo un campo de referencia del orden de microteslas
+    # cerca de la anomalía principal.
+    B_ref = 1.5e-6
+
+    profundidad = 0.15*RM
+
+    C = (
+        B_ref
+        * profundidad**3
+        / 2
+    )
+
+
+    B1 = dipolo_local(
+        r,
+        p1,
+        d1,
+        C
+    )
+
+    B2 = dipolo_local(
+        r,
+        p2,
+        d2,
+        0.8*C
+    )
+
+    B3 = dipolo_local(
+        r,
+        p3,
+        d3,
+        0.6*C
+    )
+
+    return B1 + B2 + B3
+
+
+# Energía cinética del protón
+MeV = 1.602176634e-13
+
+K = 10 * MeV
+
+
+# Calculo la rapidez a partir de la energía relativista
+gamma = 1 + K/(m*c**2)
+
+v_total = c * np.sqrt(
+    1 - 1/gamma**2
+)
+
+
+# Ecuaciones de movimiento
+def derivadas(estado):
+
+    r = estado[:3]
+    v = estado[3:]
+
+    B = campo_marte(r)
+
+    drdt = v
+
+    dvdt = (
+        q/(gamma*m)
+        * np.cross(v, B)
+    )
+
+    return np.concatenate(
+        (drdt, dvdt)
+    )
+
+
+# Integro la trayectoria usando RK2.
+# Si el protón llega a la superficie de Marte,
+# detengo la integración.
+def rk2(estado0, dt, tiempo_total):
+
+    pasos = int(tiempo_total/dt)
+
+    estados = [estado0.copy()]
+    tiempos = [0.0]
+
+    for i in range(pasos):
+
+        estado = estados[-1]
+
+        k1 = derivadas(estado)
+
+        estado_medio = (
+            estado
+            + dt*k1/2
+        )
+
+        k2 = derivadas(
+            estado_medio
+        )
+
+        nuevo_estado = (
+            estado
+            + dt*k2
+        )
+
+        estados.append(
+            nuevo_estado
+        )
+
+        tiempos.append(
+            (i + 1)*dt
+        )
+
+
+        distancia = np.linalg.norm(
+            nuevo_estado[:3]
+        )
+
+        if distancia <= RM:
+            break
+
+    return (
+        np.array(tiempos),
+        np.array(estados)
+    )
+
+
+# El protón empieza lejos de Marte.
+# Lo coloco un poco hacia el hemisferio sur para que
+# su trayectoria pase cerca de las anomalías magnéticas.
+r0 = np.array([
+    10.0*RM,
+    0.0,
+    -0.45*RM
+])
+
+
+# La velocidad apunta hacia Marte.
+v0 = np.array([
+    -v_total,
+    0.0,
+    0.0
+])
+
+
+estado0 = np.concatenate(
+    (r0, v0)
+)
+
+
+# Parámetros numéricos
+dt = 5e-6
+tiempo_total = 1.0
+
+
+# Integración
+t, solucion = rk2(
+    estado0,
+    dt,
+    tiempo_total
+)
+
+
+r = solucion[:, :3]
+v = solucion[:, 3:]
+
+
+# Posiciones expresadas en radios de Marte
+x = r[:, 0] / RM
+y = r[:, 1] / RM
+z = r[:, 2] / RM
+
+
+# Distancia del protón al centro de Marte
+distancia = (
+    np.linalg.norm(r, axis=1)
+    / RM
+)
+
+
+# Compruebo cuánto cambia la rapidez durante la integración.
+# En un campo puramente magnético debería mantenerse constante.
+rapidez = np.linalg.norm(
+    v,
+    axis=1
+)
+
+rapidez_inicial = np.linalg.norm(
+    v0
+)
+
+error_rapidez = (
+    np.abs(
+        rapidez - rapidez_inicial
+    )
+    / rapidez_inicial
+) * 100
+
+
+# Calculo la intensidad del campo magnético
+# que encuentra el protón durante su recorrido.
+B_modulo = np.zeros(
+    len(t)
+)
+
+for i in range(len(t)):
+
+    B = campo_marte(
+        r[i]
+    )
+
+    B_modulo[i] = np.linalg.norm(
+        B
+    )
+
+
+# Busco el punto donde el protón estuvo más cerca de Marte.
+indice_minimo = np.argmin(
+    distancia
+)
+
+distancia_minima = distancia[
+    indice_minimo
+]
+
+
+# También busco la zona donde el campo fue más intenso.
+# La uso después para hacer un zoom del movimiento local.
+indice_B_max = np.argmax(
+    B_modulo
+)
+
+
+# Esfera de Marte
+u = np.linspace(
+    0,
+    2*np.pi,
+    40
+)
+
+theta = np.linspace(
+    0,
+    np.pi,
+    25
+)
+
+xs = np.outer(
+    np.cos(u),
+    np.sin(theta)
+)
+
+ys = np.outer(
+    np.sin(u),
+    np.sin(theta)
+)
+
+zs = np.outer(
+    np.ones(len(u)),
+    np.cos(theta)
+)
+
+
+# Las líneas del campo marciano las obtengo numéricamente
+# siguiendo la dirección de B.
+def linea_campo(seed, direccion, ds=0.005*RM, pasos=800):
+
+    puntos = [
+        seed.copy()
+    ]
+
+    r_linea = seed.copy()
+
+    for i in range(pasos):
+
+        B = campo_marte(
+            r_linea
+        )
+
+        Bmag = np.linalg.norm(B)
+
+        if Bmag == 0:
+            break
+
+        r_linea = (
+            r_linea
+            + direccion
+            * ds
+            * B/Bmag
+        )
+
+        radio = np.linalg.norm(
+            r_linea
+        )
+
+        if radio <= RM:
+            break
+
+        if radio >= 3*RM:
+            break
+
+        puntos.append(
+            r_linea.copy()
+        )
+
+    return np.array(
+        puntos
+    )
+
+
+# Uso algunos puntos cerca del hemisferio sur
+# para visualizar las anomalías.
+seeds = [
+
+    np.array([
+        0.0,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.15*RM,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        -0.15*RM,
+        0.0,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.0,
+        0.15*RM,
+        -1.02*RM
+    ]),
+
+    np.array([
+        0.0,
+        -0.15*RM,
+        -1.02*RM
+    ])
+]
+
+
+# Trayectoria a escala planetaria
+fig = plt.figure(
+    figsize=(9, 8)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+
+ax.plot_surface(
+    xs,
+    ys,
+    zs,
+    alpha=0.4
+)
+
+
+salto = 10
+
+ax.plot(
+    x[::salto],
+    y[::salto],
+    z[::salto],
+    linewidth=1.3,
+    label="Trayectoria del protón"
+)
+
+ax.scatter(
+    x[0],
+    y[0],
+    z[0],
+    s=45,
+    label="Posición inicial"
+)
+
+
+# Dibujo algunas líneas de campo alrededor
+# de las regiones magnéticas locales.
+for seed in seeds:
+
+    adelante = linea_campo(
+        seed,
+        1
+    )
+
+    atras = linea_campo(
+        seed,
+        -1
+    )
+
+    linea = np.vstack((
+        atras[::-1],
+        adelante
+    ))
+
+    ax.plot(
+        linea[:, 0]/RM,
+        linea[:, 1]/RM,
+        linea[:, 2]/RM,
+        linewidth=0.7,
+        alpha=0.35
+    )
+
+
+ax.set_xlim(
+    -2,
+    10.5
+)
+
+ax.set_ylim(
+    -4,
+    4
+)
+
+ax.set_zlim(
+    -4,
+    4
+)
+
+ax.set_xlabel(
+    "x / $R_M$"
+)
+
+ax.set_ylabel(
+    "y / $R_M$"
+)
+
+ax.set_zlabel(
+    "z / $R_M$"
+)
+
+ax.set_title(
+    "Protón incidente sobre Marte"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Para observar la curvatura local tomo una pequeña ventana
+# alrededor del punto donde el campo fue más intenso.
+tiempo_zoom = 0.08
+
+puntos_zoom = int(
+    tiempo_zoom/dt
+)
+
+inicio_zoom = max(
+    0,
+    indice_B_max - puntos_zoom//2
+)
+
+fin_zoom = min(
+    len(r),
+    indice_B_max + puntos_zoom//2
+)
+
+
+# Resto la posición inicial de esta ventana para poder
+# observar mejor el movimiento local.
+r_referencia = r[
+    inicio_zoom
+]
+
+x_local = (
+    r[inicio_zoom:fin_zoom, 0]
+    - r_referencia[0]
+) / RM
+
+y_local = (
+    r[inicio_zoom:fin_zoom, 1]
+    - r_referencia[1]
+) / RM
+
+z_local = (
+    r[inicio_zoom:fin_zoom, 2]
+    - r_referencia[2]
+) / RM
+
+
+fig = plt.figure(
+    figsize=(8, 7)
+)
+
+ax = fig.add_subplot(
+    111,
+    projection="3d"
+)
+
+ax.plot(
+    x_local,
+    y_local,
+    z_local,
+    linewidth=1.3
+)
+
+ax.scatter(
+    x_local[0],
+    y_local[0],
+    z_local[0],
+    s=40,
+    label="Inicio del zoom"
+)
+
+ax.set_xlabel(
+    r"$\Delta x/R_M$"
+)
+
+ax.set_ylabel(
+    r"$\Delta y/R_M$"
+)
+
+ax.set_zlabel(
+    r"$\Delta z/R_M$"
+)
+
+ax.set_title(
+    "Zoom local de la trayectoria cerca de Marte"
+)
+
+ax.legend()
+
+plt.show()
+
+
+# Distancia del protón al centro de Marte
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    distancia
+)
+
+plt.axhline(
+    1,
+    linestyle="--"
+)
+
+plt.scatter(
+    t[indice_minimo],
+    distancia_minima,
+    s=35
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    r"$r/R_M$"
+)
+
+plt.title(
+    "Distancia del protón al centro de Marte"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Intensidad del campo encontrada durante el recorrido
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    B_modulo
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "|B| [T]"
+)
+
+plt.title(
+    "Campo magnético encontrado por el protón"
+)
+
+plt.grid()
+
+plt.show()
+
+
+# Error numérico de RK2
+plt.figure(
+    figsize=(9, 5)
+)
+
+plt.plot(
+    t,
+    error_rapidez
+)
+
+plt.xlabel(
+    "Tiempo [s]"
+)
+
+plt.ylabel(
+    "Error relativo [%]"
+)
+
+plt.title(
+    "Error en la conservación de la rapidez"
+)
+
+plt.grid()
+
+plt.show()
